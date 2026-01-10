@@ -16,3 +16,8 @@ ALTER TABLE dbo.RawContact WITH NOCHECK
     ADD CONSTRAINT CK_RawContact_Email
     CHECK (Email IS NULL OR REGEXP_LIKE(Email, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z]{2,}$'));
 GO
+
+-- REGEXP_LIKE is boolean, so it cannot sit in the select list on its own. Use CASE to get a flag.
+SELECT ContactId, Email,
+       CASE WHEN REGEXP_LIKE(Email, '@') THEN 1 ELSE 0 END AS has_at
+FROM dbo.RawContact;
