@@ -28,6 +28,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
+    DECLARE @keycol SYSNAME = (SELECT TOP (1) name FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.' + QUOTENAME(@TableName)) ORDER BY column_id);
     DECLARE @rule INT, @col SYSNAME, @pattern NVARCHAR(400), @repl NVARCHAR(400), @flags VARCHAR(10), @sql NVARCHAR(MAX);
 
     DECLARE r CURSOR LOCAL FAST_FORWARD FOR
@@ -44,10 +45,16 @@ BEGIN
         IF COL_LENGTH(N'dbo.' + QUOTENAME(@TableName), @col) IS NULL
             THROW 53000, N'Rule refers to a column that does not exist.', 1;
 
+        -- OUTPUT writes the old and new value of every changed row to the log. The first column of the
+        -- table is assumed to be its key (ContactId for RawContact); see 13_change_log.sql.
         SET @sql = N'UPDATE dbo.' + QUOTENAME(@TableName) + N' SET ' + QUOTENAME(@col)
                  + N' = REGEXP_REPLACE(' + QUOTENAME(@col) + N', @p, @r, 1, 0, @f)'
+                 + N' OUTPUT @rule, @tn, @cn, CONVERT(NVARCHAR(100), inserted.' + QUOTENAME(@keycol) + N'), deleted.' + QUOTENAME(@col)
+                 + N', inserted.' + QUOTENAME(@col)
+                 + N' INTO dbo.CleanupLog (RuleId, TableName, ColumnName, RowKey, OldValue, NewValue)'
                  + N' WHERE REGEXP_LIKE(' + QUOTENAME(@col) + N', @p, @f);';
-        EXEC sys.sp_executesql @sql, N'@p NVARCHAR(400), @r NVARCHAR(400), @f VARCHAR(10)', @p = @pattern, @r = @repl, @f = @flags;
+        EXEC sys.sp_executesql @sql, N'@p NVARCHAR(400), @r NVARCHAR(400), @f VARCHAR(10), @rule INT, @tn SYSNAME, @cn SYSNAME',
+             @p = @pattern, @r = @repl, @f = @flags, @rule = @rule, @tn = @TableName, @cn = @col;
 
         FETCH NEXT FROM r INTO @rule, @col, @pattern, @repl, @flags;
     END
