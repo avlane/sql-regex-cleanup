@@ -47,12 +47,18 @@ BEGIN
 
         -- OUTPUT writes the old and new value of every changed row to the log. The first column of the
         -- table is assumed to be its key (ContactId for RawContact); see 13_change_log.sql.
-        SET @sql = N'UPDATE dbo.' + QUOTENAME(@TableName) + N' SET ' + QUOTENAME(@col)
+        -- OUTPUT ... INTO a real table fails (error 334) when the target has enabled triggers, so the
+        -- changes go through a table variable first. The log row is only written when the bytes differ,
+        -- because a plain <> ignores trailing spaces and would hide a trim.
+        SET @sql = N'DECLARE @changes TABLE (RowKey NVARCHAR(100), OldValue NVARCHAR(MAX), NewValue NVARCHAR(MAX)); '
+                 + N'UPDATE dbo.' + QUOTENAME(@TableName) + N' SET ' + QUOTENAME(@col)
                  + N' = REGEXP_REPLACE(' + QUOTENAME(@col) + N', @p, @r, 1, 0, @f)'
-                 + N' OUTPUT @rule, @tn, @cn, CONVERT(NVARCHAR(100), inserted.' + QUOTENAME(@keycol) + N'), deleted.' + QUOTENAME(@col)
-                 + N', inserted.' + QUOTENAME(@col)
-                 + N' INTO dbo.CleanupLog (RuleId, TableName, ColumnName, RowKey, OldValue, NewValue)'
-                 + N' WHERE REGEXP_LIKE(' + QUOTENAME(@col) + N', @p, @f);';
+                 + N' OUTPUT CONVERT(NVARCHAR(100), inserted.' + QUOTENAME(@keycol) + N'), deleted.' + QUOTENAME(@col)
+                 + N', inserted.' + QUOTENAME(@col) + N' INTO @changes (RowKey, OldValue, NewValue)'
+                 + N' WHERE REGEXP_LIKE(' + QUOTENAME(@col) + N', @p, @f); '
+                 + N'INSERT INTO dbo.CleanupLog (RuleId, TableName, ColumnName, RowKey, OldValue, NewValue) '
+                 + N'SELECT @rule, @tn, @cn, RowKey, OldValue, NewValue FROM @changes '
+                 + N'WHERE ISNULL(CAST(OldValue AS VARBINARY(MAX)), 0x) <> ISNULL(CAST(NewValue AS VARBINARY(MAX)), 0x);';
         EXEC sys.sp_executesql @sql, N'@p NVARCHAR(400), @r NVARCHAR(400), @f VARCHAR(10), @rule INT, @tn SYSNAME, @cn SYSNAME',
              @p = @pattern, @r = @repl, @f = @flags, @rule = @rule, @tn = @TableName, @cn = @col;
 
