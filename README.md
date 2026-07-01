@@ -53,6 +53,9 @@ ContactId  source_column  match_id  email
 1          Email          1         rosa.alvarez@example.com
 2          Notes          1         kenji@home.example.org
 3          Email          1         priya@example.com
+4          Email          1         oneil@example.com
 5          Email          1         mei.chen@example.com
 5          Email          2         mei@work.example.com
 ```
+
+Note the row for contact 4: `tom oneil@example.com` has a space in it, but `REGEXP_MATCHES` finds the substring `oneil@example.com`. Validate with `REGEXP_LIKE` and anchors (script 03) before trusting a match.
